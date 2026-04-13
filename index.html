@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>LensLab · Camera Filters & QR Scanner</title>
+    <!-- html5-qrcode library for QR scanning -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- Font Awesome 6 (free icons) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0f1e;
+            font-family: 'Segoe UI', system-ui, -apple-system, 'Inter', sans-serif;
+            overflow-x: hidden;
+            min-height: 100vh;
+            color: white;
+        }
+
+        /* main app container */
+        .app-container {
+            max-width: 550px;
+            margin: 0 auto;
+            background: #101624;
+            min-height: 100vh;
+            position: relative;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* header */
+        .header {
+            padding: 1rem 1.2rem;
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            background: linear-gradient(135deg, #fff, #aaa);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .badge {
+            background: #2a2f44;
+            padding: 0.2rem 0.8rem;
+            border-radius: 40px;
+            font-size: 0.7rem;
+            font-weight: 500;
+        }
+
+        /* camera view + filters overlay */
+        .camera-stage {
+            position: relative;
+            background: #000;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            overflow: hidden;
+            border-radius: 0 0 28px 28px;
+            margin-bottom: 0.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(1);
+            transition: filter 0.1s ease;
+        }
+        /* filter canvas (for realtime filter preview using CSS filters on video) */
+        /* we'll apply css filter to video element directly */
+        .filter-overlay {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(8px);
+            padding: 4px 12px;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        /* filter carousel */
+        .filters-panel {
+            padding: 0.8rem 1rem;
+            background: rgba(20, 25, 40, 0.9);
+            backdrop-filter: blur(12px);
+            margin: 0.8rem 1rem;
+            border-radius: 48px;
+            display: flex;
+            gap: 0.6rem;
+            overflow-x: auto;
+            scrollbar-width: thin;
+            -webkit-overflow-scrolling: touch;
+            white-space: nowrap;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        .filter-btn {
+            background: #1e243b;
+            border: none;
+            color: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 40px;
+            font-weight: 500;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            flex-shrink: 0;
+            backdrop-filter: blur(4px);
+        }
+        .filter-btn i {
+            font-size: 1rem;
+        }
+        .filter-btn.active {
+            background: #3b4bff;
+            box-shadow: 0 0 8px #3b4bffaa;
+        }
+        .filter-btn:hover {
+            background: #2f3a62;
+            transform: scale(0.96);
+        }
+
+        /* action buttons row (capture, switch camera, qr toggle) */
+        .action-bar {
+            display: flex;
+            justify-content: center;
+            gap: 1.8rem;
+            margin: 0.5rem 1rem 1rem;
+        }
+        .action-btn {
+            background: #1e243b;
+            border: none;
+            color: white;
+            width: 65px;
+            height: 65px;
+            border-radius: 60px;
+            font-size: 1.8rem;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 5px 12px rgba(0,0,0,0.3);
+            backdrop-filter: blur(4px);
+        }
+        .action-btn:active {
+            transform: scale(0.92);
+        }
+        .capture-btn {
+            background: #ff5e6b;
+            width: 75px;
+            height: 75px;
+            box-shadow: 0 0 12px #ff5e6baa;
+        }
+        .capture-btn i {
+            font-size: 2.2rem;
+        }
+
+        /* QR Scanner section (toggle) */
+        .qr-section {
+            margin: 0.5rem 1rem 1.2rem;
+            background: #0f1322e6;
+            border-radius: 32px;
+            padding: 1rem;
+            backdrop-filter: blur(12px);
+            transition: all 0.25s ease;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .qr-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .qr-title {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .close-qr {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: white;
+            border-radius: 40px;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        #qr-reader {
+            width: 100%;
+            border-radius: 20px;
+            overflow: hidden;
+            background: #000;
+        }
+        .qr-result {
+            margin-top: 12px;
+            background: #00000066;
+            padding: 10px;
+            border-radius: 24px;
+            font-size: 0.85rem;
+            word-break: break-all;
+            text-align: center;
+        }
+        .toast-msg {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e1f2ccc;
+            backdrop-filter: blur(16px);
+            padding: 10px 20px;
+            border-radius: 60px;
+            font-size: 0.85rem;
+            z-index: 100;
+            color: white;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+        .hidden {
+            display: none;
+        }
+        .snapshot-canvas {
+            position: fixed;
+            top: -1000px;
+            left: -1000px;
+        }
+        @media (max-width: 480px) {
+            .filter-btn { padding: 0.4rem 1rem; font-size: 0.75rem; }
+            .action-btn { width: 55px; height: 55px; font-size: 1.5rem; }
+            .capture-btn { width: 68px; height: 68px; }
+        }
+    </style>
+</head>
+<body>
+<div class="app-container">
+    <div class="header">
+        <h1><i class="fas fa-camera-retro"></i> LensLab</h1>
+        <div class="badge"><i class="fas fa-magic"></i> Live Filters</div>
+    </div>
+
+    <!-- Camera preview area -->
+    <div class="camera-stage">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="filter-overlay" id="filterLabel">
+            <i class="fas fa-palette"></i> <span id="filterName">Normal</span>
+        </div>
+    </div>
+
+    <!-- Filter carousel -->
+    <div class="filters-panel" id="filterList">
+        <button class="filter-btn active" data-filter="none"><i class="fas fa-ban"></i> Normal</button>
+        <button class="filter-btn" data-filter="grayscale"><i class="fas fa-adjust"></i> Mono</button>
+        <button class="filter-btn" data-filter="sepia"><i class="fas fa-image"></i> Sepia</button>
+        <button class="filter-btn" data-filter="invert"><i class="fas fa-moon"></i> Invert</button>
+        <button class="filter-btn" data-filter="vintage"><i class="fas fa-fire"></i> Vintage</button>
+        <button class="filter-btn" data-filter="cool"><i class="fas fa-temperature-low"></i> Cool</button>
+        <button class="filter-btn" data-filter="warm"><i class="fas fa-sun"></i> Warm</button>
+        <button class="filter-btn" data-filter="high-contrast"><i class="fas fa-chart-line"></i> Contrast+</button>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="action-bar">
+        <button class="action-btn" id="switchCamBtn" title="Switch Camera"><i class="fas fa-sync-alt"></i></button>
+        <button class="action-btn capture-btn" id="captureBtn" title="Take Photo"><i class="fas fa-camera"></i></button>
+        <button class="action-btn" id="qrToggleBtn" title="QR Scanner"><i class="fas fa-qrcode"></i></button>
+    </div>
+
+    <!-- QR Scanner collapsible panel -->
+    <div id="qrPanel" class="qr-section hidden">
+        <div class="qr-header">
+            <div class="qr-title"><i class="fas fa-qrcode"></i> Scan QR Code</div>
+            <button class="close-qr" id="closeQrBtn"><i class="fas fa-times"></i> Close</button>
+        </div>
+        <div id="qr-reader"></div>
+        <div id="qrResult" class="qr-result">📷 Point camera at QR code...</div>
+    </div>
+</div>
+<div id="toastMsg" class="toast-msg hidden"></div>
+<canvas id="snapshotCanvas" class="snapshot-canvas"></canvas>
+
+<script>
+    // ---------- DOM Elements ----------
+    const video = document.getElementById('video');
+    const captureBtn = document.getElementById('captureBtn');
+    const switchCamBtn = document.getElementById('switchCamBtn');
+    const qrToggleBtn = document.getElementById('qrToggleBtn');
+    const qrPanel = document.getElementById('qrPanel');
+    const closeQrBtn = document.getElementById('closeQrBtn');
+    const qrResultDiv = document.getElementById('qrResult');
+    const filterNameSpan = document.getElementById('filterName');
+    const snapshotCanvas = document.getElementById('snapshotCanvas');
+    const ctx = snapshotCanvas.getContext('2d');
+    
+    // Filter mapping (CSS filter values)
+    const filterStyles = {
+        none: 'none',
+        grayscale: 'grayscale(100%)',
+        sepia: 'sepia(90%)',
+        invert: 'invert(90%)',
+        vintage: 'sepia(40%) contrast(110%) brightness(95%) saturate(140%)',
+        cool: 'brightness(102%) contrast(105%) saturate(120%) hue-rotate(10deg)',
+        warm: 'sepia(20%) brightness(105%) saturate(130%) hue-rotate(-10deg)',
+        'high-contrast': 'contrast(160%) brightness(105%)'
+    };
+    
+    let currentFilter = 'none';
+    let currentStream = null;
+    let isCameraActive = false;
+    let facingMode = 'environment'; // start with back camera
+    let qrScanner = null;
+    let qrScanActive = false;
+    
+    // Helper: show toast message
+    function showToast(msg, duration = 2200) {
+        const toast = document.getElementById('toastMsg');
+        toast.innerText = msg;
+        toast.classList.remove('hidden');
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, duration);
+    }
+    
+    // Apply CSS filter to video element
+    function applyFilterToVideo(filterKey) {
+        const filterValue = filterStyles[filterKey] || 'none';
+        video.style.filter = filterValue;
+        filterNameSpan.innerText = filterKey === 'none' ? 'Normal' : 
+            (filterKey === 'grayscale' ? 'Mono' :
+            filterKey === 'sepia' ? 'Sepia' :
+            filterKey === 'invert' ? 'Invert' :
+            filterKey === 'vintage' ? 'Vintage' :
+            filterKey === 'cool' ? 'Cool' :
+            filterKey === 'warm' ? 'Warm' : 'High Contrast');
+    }
+    
+    // Initialize camera with specific facing mode
+    async function initCamera(facing = facingMode) {
+        if (currentStream) {
+            // stop all tracks
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        const constraints = {
+            video: {
+                facingMode: { exact: facing },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        };
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            currentStream = stream;
+            video.srcObject = stream;
+            await video.play();
+            isCameraActive = true;
+            applyFilterToVideo(currentFilter);
+            // ensure QR scanner stops when camera reinitializes (avoid conflicts)
+            if (qrScanActive) {
+                stopQrScanner();
+                hideQrPanel();
+            }
+            showToast(`📸 Camera ready (${facing === 'environment' ? 'Back' : 'Front'} cam)`);
+        } catch (err) {
+            console.error("Camera error:", err);
+            // fallback: try without exact facing constraint
+            if (facing === 'environment') {
+                try {
+                    const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    currentStream = fallbackStream;
+                    video.srcObject = fallbackStream;
+                    await video.play();
+                    isCameraActive = true;
+                    applyFilterToVideo(currentFilter);
+                    showToast("⚠️ Using default camera (back cam fallback)");
+                } catch (fallbackErr) {
+                    showToast("❌ Cannot access camera. Please grant permissions.");
+                }
+            } else {
+                showToast("Camera unavailable. Check permissions.");
+            }
+        }
+    }
+    
+    // switch between front and back
+    async function switchCamera() {
+        if (!isCameraActive) return;
+        facingMode = facingMode === 'environment' ? 'user' : 'environment';
+        await initCamera(facingMode);
+    }
+    
+    // Take photo: capture current video frame + apply filter onto canvas (with filter effect baked)
+    function takePhoto() {
+        if (!video.videoWidth || !video.videoHeight) {
+            showToast("Camera not ready, wait...");
+            return;
+        }
+        // Set canvas dimensions to match video stream
+        snapshotCanvas.width = video.videoWidth;
+        snapshotCanvas.height = video.videoHeight;
+        // Draw the video frame to canvas
+        ctx.drawImage(video, 0, 0, snapshotCanvas.width, snapshotCanvas.height);
+        
+        // Apply the selected CSS-like filter to canvas image manually (using ctx filter property)
+        // CSS filters on canvas: ctx.filter works great! We'll apply the same style.
+        const filterValue = filterStyles[currentFilter] || 'none';
+        // Save context, apply filter, draw again, then restore.
+        // To avoid double drawing, we can: store image data, apply filter, redraw.
+        // Better: draw again with filter after getting image data? Actually simpler: apply filter to canvas context, draw again.
+        // But we already drew once. We'll re-draw with filter effect ON.
+        ctx.filter = filterValue;
+        ctx.drawImage(video, 0, 0, snapshotCanvas.width, snapshotCanvas.height);
+        ctx.filter = 'none'; // reset
+        
+        // Convert to downloadable URL
+        const photoURL = snapshotCanvas.toDataURL('image/png');
+        // Create a temporary link to download
+        const link = document.createElement('a');
+        const timestamp = new Date().toISOString().slice(0,19).replace(/:/g, '-');
+        link.download = `lenslab_${timestamp}.png`;
+        link.href = photoURL;
+        link.click();
+        showToast("📸 Photo saved! Filter applied.");
+        
+        // optional haptic? just nice feedback
+    }
+    
+    // ---------- QR CODE SCANNER INTEGRATION (html5-qrcode) ----------
+    async function startQrScanner() {
+        if (!isCameraActive) {
+            showToast("Please wait, camera is initializing...");
+            return false;
+        }
+        if (qrScanner) {
+            try {
+                await qrScanner.stop();
+            } catch(e) {}
+        }
+        const qrContainer = document.getElementById('qr-reader');
+        qrContainer.innerHTML = ''; // clear previous
+        qrScanner = new Html5Qrcode("qr-reader");
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        try {
+            await qrScanner.start(
+                { facingMode: facingMode === 'environment' ? "environment" : "user" },
+                config,
+                (decodedText, decodedResult) => {
+                    qrResultDiv.innerHTML = `<i class="fas fa-check-circle"></i> ✅ Scanned: ${decodedText}`;
+                    showToast(`QR detected: ${decodedText.substring(0, 50)}`, 3000);
+                    // Optional: copy or open link? we just show, but also you can add auto detect URL
+                    if (decodedText.startsWith('http')) {
+                        qrResultDiv.innerHTML += `<br><span style="font-size:0.7rem;">🔗 Tap to open? <button id="openLinkBtn" style="background:#3b4bff; border:none; border-radius:20px; padding:4px 10px; margin-left:6px;">Open</button></span>`;
+                        const openBtn = document.getElementById('openLinkBtn');
+                        if (openBtn) openBtn.onclick = () => window.open(decodedText, '_blank');
+                    }
+                },
+                (errorMessage) => {
+                    // silent fail, just keep scanning
+                    // console.debug(errorMessage);
+                }
+            );
+            qrScanActive = true;
+            showToast("QR scanner active. Point at QR code.");
+            return true;
+        } catch (err) {
+            console.error("QR start error:", err);
+            qrResultDiv.innerHTML = "⚠️ Failed to start QR scanner. Ensure camera permissions.";
+            showToast("QR scanner error: camera may be busy.");
+            return false;
+        }
+    }
+    
+    function stopQrScanner() {
+        if (qrScanner && qrScanActive) {
+            qrScanner.stop().catch(e=>console.warn);
+            qrScanner = null;
+            qrScanActive = false;
+        }
+        const qrContainer = document.getElementById('qr-reader');
+        if (qrContainer) qrContainer.innerHTML = '<div style="padding:20px; text-align:center;">Scanner stopped</div>';
+    }
+    
+    function showQrPanel() {
+        qrPanel.classList.remove('hidden');
+        // ensure camera is alive, and if so start scanner
+        if (isCameraActive && currentStream && video.readyState >= 2) {
+            startQrScanner().catch(e => {
+                qrResultDiv.innerHTML = "Could not start scanner. Restart camera?";
+            });
+        } else {
+            qrResultDiv.innerHTML = "⌛ Initializing camera, please wait...";
+            // try to init if not active? But camera should be active already.
+            setTimeout(() => {
+                if (isCameraActive) startQrScanner();
+                else qrResultDiv.innerHTML = "Camera not available. Refresh permissions.";
+            }, 800);
+        }
+    }
+    
+    function hideQrPanel() {
+        qrPanel.classList.add('hidden');
+        if (qrScanActive) {
+            stopQrScanner();
+        }
+        qrResultDiv.innerHTML = "📷 Point camera at QR code...";
+    }
+    
+    // Toggle QR panel: if visible hide, else show and init scanner
+    function toggleQrPanel() {
+        if (qrPanel.classList.contains('hidden')) {
+            // close filter selection feeling? we just show panel
+            showQrPanel();
+        } else {
+            hideQrPanel();
+        }
+    }
+    
+    // filter button event listeners
+    function setupFilters() {
+        const btns = document.querySelectorAll('.filter-btn');
+        btns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                btns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const filterVal = btn.getAttribute('data-filter');
+                currentFilter = filterVal;
+                applyFilterToVideo(currentFilter);
+                showToast(`Filter: ${filterNameSpan.innerText}`, 800);
+                // if QR scanner is active, we keep it but filters do not affect scanner, only camera preview.
+            });
+        });
+    }
+    
+    // additional: when camera restarts, if qr panel is open, we should re-init scanner?
+    // to avoid broken scanner, we close panel on camera switch? good UX
+    async function reinitAfterSwitch() {
+        if (!qrPanel.classList.contains('hidden')) {
+            hideQrPanel();
+            showToast("QR scanner closed (camera switched). Tap QR button again.", 1500);
+        }
+    }
+    
+    // enhanced switch with panel close
+    const originalSwitch = switchCamera;
+    switchCamBtn.addEventListener('click', async () => {
+        await switchCamera();
+        await reinitAfterSwitch();
+    });
+    
+    // Capture photo
+    captureBtn.addEventListener('click', () => {
+        if (isCameraActive) takePhoto();
+        else showToast("Camera not ready yet");
+    });
+    
+    // QR toggle
+    qrToggleBtn.addEventListener('click', toggleQrPanel);
+    closeQrBtn.addEventListener('click', hideQrPanel);
+    
+    // cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (qrScanner && qrScanActive) {
+            qrScanner.stop().catch(e=>{});
+        }
+    });
+    
+    // Also handle visibility change to release resources? not needed but good practice
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && currentStream) {
+            // optional: do nothing, keep stream alive for quick resume
+        }
+    });
+    
+    // start camera on load
+    async function bootstrap() {
+        await initCamera('environment');
+        setupFilters();
+    }
+    bootstrap().catch(e => showToast("Error: " + e.message));
+    
+    // manual resize for canvas alignment (nothing else)
+    // ensure filter style doesn't break QR reader container
+    // also we need to stop QR stream if camera switches, we already do
+    // fix: when qr panel is open and user takes photo, we don't interfere
+    // perfect: all features integrated
+    
+    // extra safety: on filter change while qr active, fine because filter only on video preview, QR scanner uses separate stream?
+    // html5-qrcode requests its own stream, but we share same camera resource? potential conflict: two getUserMedia on same device cause errors.
+    // To avoid that, we should stop the main camera stream temporarily when starting QR scanner? Actually html5-qrcode will request new stream
+    // and cause conflict. Better approach: when QR scanner starts, we should release main video stream to avoid double access.
+    // Override startQrScanner: stop main camera before starting QR scanner, then after QR close restart main camera.
+    // But we need seamlessness. Redesign logic: If QR panel opens, we stop main video stream, start QR scanner, after closing restart main camera.
+    let originalStream = null;
+    const originalStartQr = startQrScanner;
+    startQrScanner = async function() {
+        if (currentStream && currentStream.active) {
+            // store tracks but stop main camera to free camera for QR scanner
+            if (currentStream) {
+                currentStream.getTracks().forEach(t => t.stop());
+                currentStream = null;
+                isCameraActive = false;
+                video.srcObject = null;
+            }
+        }
+        const qrContainer = document.getElementById('qr-reader');
+        qrContainer.innerHTML = '';
+        qrScanner = new Html5Qrcode("qr-reader");
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        try {
+            await qrScanner.start(
+                { facingMode: facingMode === 'environment' ? "environment" : "user" },
+                config,
+                (decodedText) => {
+                    qrResultDiv.innerHTML = `<i class="fas fa-check-circle"></i> ✅ ${decodedText}`;
+                    showToast(`QR: ${decodedText.substring(0, 45)}`, 2500);
+                    if (decodedText.startsWith('http')) {
+                        qrResultDiv.innerHTML += `<br><a href="${decodedText}" target="_blank" style="color:#8f9eff;">🔗 Open link</a>`;
+                    }
+                },
+                () => {}
+            );
+            qrScanActive = true;
+            return true;
+        } catch (err) {
+            qrResultDiv.innerHTML = "QR error: camera conflict. Try refresh.";
+            // restart main camera fallback
+            await initCamera(facingMode);
+            return false;
+        }
+    };
+    
+    const originalHideQr = hideQrPanel;
+    hideQrPanel = async function() {
+        qrPanel.classList.add('hidden');
+        if (qrScanActive && qrScanner) {
+            await qrScanner.stop().catch(e=>{});
+            qrScanner = null;
+            qrScanActive = false;
+        }
+        // restart main camera if not active
+        if (!currentStream || !currentStream.active) {
+            await initCamera(facingMode);
+        }
+        qrResultDiv.innerHTML = "📷 Point camera at QR code...";
+    };
+    
+    const originalShowQr = showQrPanel;
+    showQrPanel = function() {
+        qrPanel.classList.remove('hidden');
+        startQrScanner().catch(e => {
+            qrResultDiv.innerHTML = "Failed to init QR scanner: camera error";
+        });
+    };
+    
+    // replace functions references
+    window.startQrScanner = startQrScanner;
+    window.hideQrPanel = hideQrPanel;
+    window.showQrPanel = showQrPanel;
+    // rebind close button & toggle
+    closeQrBtn.onclick = () => hideQrPanel();
+    qrToggleBtn.onclick = () => {
+        if (qrPanel.classList.contains('hidden')) showQrPanel();
+        else hideQrPanel();
+    };
+    
+    // also ensure switch camera closes qr and restarts cleanly
+    const superSwitch = switchCamera;
+    switchCamera = async function() {
+        if (!qrPanel.classList.contains('hidden')) await hideQrPanel();
+        facingMode = facingMode === 'environment' ? 'user' : 'environment';
+        await initCamera(facingMode);
+    };
+    switchCamBtn.onclick = switchCamera;
+    
+    // final init with proper camera
+    (async () => {
+        await initCamera('environment');
+        setupFilters();
+    })();
+</script>
+</body>
+</html>
